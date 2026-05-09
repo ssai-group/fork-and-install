@@ -1,59 +1,75 @@
----
+﻿---
 name: fork-and-install
-version: "1.0.0"
+version: "1.1.0"
 description: >
   Forks any GitHub skill or plugin repository to ssai-group and installs it as a
-  Claude Code plugin. Use whenever the user gives you a GitHub repo URL and asks
-  to install it as a skill or plugin. Also use proactively when the user says
-  "install this skill", "add this plugin", or pastes a GitHub URL for a skill.
+  Claude Code plugin. Runs a mandatory Sentinel security scan before every install.
+  Use whenever the user gives you a GitHub repo URL and asks to install it as a
+  skill or plugin.
 ---
 
 # Fork and Install
 
-You are the fork-and-install skill. When the user gives you a GitHub repository URL to install as a skill or plugin, follow these steps exactly.
+Follow these steps exactly when the user gives you a GitHub URL to install. Do not skip any step.
 
-## Steps
+## Step 1: Parse the repo
+Extract owner/repo from the URL.
 
-### 1. Parse the repo
-Extract `owner/repo` from the URL. For example:
-- `https://github.com/obra/superpowers` → `obra/superpowers`
-- `https://github.com/AgriciDaniel/claude-obsidian` → `AgriciDaniel/claude-obsidian`
+## Step 2: Pre-install security scan (MANDATORY)
 
-### 2. Fork to ssai-group
-Run:
-```powershell
-& "$env:TEMP\gh_portable\bin\gh.exe" repo fork owner/repo --clone=false
-```
-If `gh` is not found at that path, check if it is on PATH with `gh --version`. If neither works, tell the user to run `gh auth login` first using the portable binary at `C:\Users\admin\AppData\Local\Temp\gh_portable\bin\gh.exe`.
+Before forking or installing, run a full Sentinel security scan:
 
-### 3. Add as marketplace
-```powershell
-claude plugin marketplace add ssai-group/repo-name
-```
-Note the marketplace name printed on success (e.g. `repo-name-marketplace` or `repo-name-dev`).
+1. Read the repo key files via GitHub contents API (CLAUDE.md, SKILL.md, hooks/, scripts/)
 
-### 4. Install the plugin
-```powershell
-claude plugin install plugin-name@marketplace-name
-```
-The plugin name comes from the repo's `.claude-plugin/plugin.json` `name` field. If the repo has no `.claude-plugin` directory, tell the user: "This repo is not structured as a Claude Code plugin. It may be a raw skill file. Ask me to set it up as a plugin first."
+2. Search external threat sources in parallel:
+   - site:github.com/advisories "[repo-name]" vulnerability
+   - site:vulnerablemcp.info [repo-name]
+   - "[repo-name]" CVE 2025 OR 2026
+   - site:reddit.com/r/ClaudeAI [repo-name] security OR malicious
 
-### 5. Check for a PreToolUse hook
-After install, check if the plugin has a `hooks/` directory containing a `.py` or `.sh` hook file. If it does:
-- Copy the hook file to `C:\Users\admin\.claude\skills\<hook-filename>`
-- Read `C:\Users\admin\.claude\settings.json`
-- Add a PreToolUse entry pointing to the copied file using `python "C:/Users/admin/.claude/skills/<hook-filename>"`
-- Write the updated settings.json back
+3. Static analysis — flag and stop on any of these:
+   - Shell commands accessing credential files or private key directories
+   - Network POST requests to non-standard domains
+   - Remote content piped directly into an interpreter
+   - eval() or exec() on external data
+   - Scripts that modify shell profiles
 
-### 6. Report
-Tell the user:
-- Fork URL: `https://github.com/ssai-group/repo-name`
-- Plugin installed: `plugin-name@marketplace-name`
-- Hook registered: yes/no
-- To reinstall on any new device: the exact two commands needed
+4. Coherence check — does everything match the repo stated purpose?
 
-## Important rules
-- Always fork to `ssai-group` — never install directly from a third-party repo
-- Never skip the fork step even if the user says "just install it directly"
-- If the fork already exists, `gh repo fork` will report it — that is fine, continue
-- Always use the user's own fork as the plugin source
+5. Present verdict before proceeding:
+   - OK: Clean, proceed
+   - WARN: Concerns found, ask user to confirm
+   - STOP: Critical threat found, do not install
+
+If verdict is STOP, halt. Do not fork or install.
+
+## Step 3: Fork to ssai-group
+Run: & "$env:TEMP\gh_portable\bin\gh.exe" repo fork owner/repo --clone=false
+
+## Step 4: Add as marketplace
+Run: claude plugin marketplace add ssai-group/repo-name
+
+Note the marketplace name printed on success.
+
+## Step 5: Install the plugin
+Run: claude plugin install plugin-name@marketplace-name
+
+The plugin name comes from .claude-plugin/plugin.json name field.
+If no .claude-plugin directory exists, tell the user and offer to set it up.
+
+## Step 6: Check for a PreToolUse hook
+If the plugin has a hooks/ directory with a .py hook file:
+- Copy it to C:\Users\admin\.claude\skills\<hook-filename>
+- Add a PreToolUse entry to C:\Users\admin\.claude\settings.json
+
+## Step 7: Report
+- Security scan summary
+- Fork URL
+- Plugin installed name
+- Hook registered yes/no
+- Reinstall commands for new devices
+
+## Rules
+- Always fork to ssai-group, never install from third-party repos directly
+- Never skip the security scan
+- Always show scan verdict before forking
